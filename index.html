@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="OTP Lock">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>OTP Lock</title>
+<style>
+  :root {
+    --bg: #f1f5f9; --card: #ffffff; --field: #f8fafc; --line: #e2e8f0;
+    --fg: #0f172a; --muted: #64748b; --accent: #2563eb; --accent-fg: #fff;
+    --ok: #16a34a; --ok-bg: #dcfce7; --err: #dc2626; --err-bg: #fee2e2; --warn: #b45309; --warn-bg: #fef3c7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a; --card: #1e293b; --field: #0b1220; --line: #334155;
+      --fg: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6; --accent-fg: #fff;
+      --ok: #4ade80; --ok-bg: #14532d; --err: #f87171; --err-bg: #450a0a; --warn: #fbbf24; --warn-bg: #422006;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  main { max-width: 480px; margin: 0 auto; display: grid; gap: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .status { text-align: center; padding: 22px 16px; }
+  .status .icon { font-size: 44px; line-height: 1; }
+  .status .title { font-size: 26px; font-weight: 700; margin-top: 6px; }
+  .status .sub { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; direction: ltr; }
+  .status .meta { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .status.locked .title { color: var(--err); }
+  .status.open .title { color: var(--ok); }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 13px 16px;
+    background: var(--accent); color: var(--accent-fg); width: 100%; cursor: pointer;
+  }
+  button:disabled { opacity: .5; }
+  button.danger { background: var(--err); }
+  button.ghost { background: transparent; color: var(--muted); width: auto; padding: 6px 10px; font-weight: 500; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip {
+    width: auto; padding: 8px 12px; border-radius: 999px; font-weight: 500;
+    background: var(--field); color: var(--fg); border: 1px solid var(--line);
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  input, textarea {
+    font: inherit; width: 100%; background: var(--field); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 12px;
+  }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #code { font-size: 28px; letter-spacing: 6px; text-align: center; direction: ltr; font-variant-numeric: tabular-nums; }
+  #code::placeholder { font-size: 17px; letter-spacing: normal; }
+  textarea { min-height: 84px; resize: vertical; }
+  .count { color: var(--muted); font-size: 12px; margin: -8px 0 10px; text-align: left; }
+  #toast {
+    position: fixed; inset-inline: 16px; bottom: max(16px, env(safe-area-inset-bottom)); max-width: 448px;
+    margin: 0 auto; padding: 12px 16px; border-radius: 12px; font-weight: 600; text-align: center;
+    transform: translateY(150%); transition: transform .25s; z-index: 10;
+  }
+  #toast.show { transform: none; }
+  #toast.ok { background: var(--ok-bg); color: var(--ok); }
+  #toast.err { background: var(--err-bg); color: var(--err); }
+  #toast.info { background: var(--warn-bg); color: var(--warn); }
+  .hidden { display: none !important; }
+  .note { color: var(--muted); font-size: 13px; margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🔒 OTP Lock</h1>
+    <button class="ghost" id="refresh" type="button">↻ רענון</button>
+  </header>
+
+  <section class="card hidden" id="nolink">
+    <h2>אין חיבור למחשב</h2>
+    <p class="note">פתח את הדף מהברקוד שבתוכנה במחשב (כפתור 📱 בחלון הטיימר).
+      הקישור מכיל את הערוץ הסודי של המחשב שלך.</p>
+  </section>
+
+  <div id="app" class="hidden" style="display:grid;gap:14px">
+    <section class="card status" id="status" aria-live="polite">
+      <div class="icon" id="st-icon">⏳</div>
+      <div class="title" id="st-title">בודק מצב…</div>
+      <div class="sub" id="st-sub"></div>
+      <div class="meta" id="st-meta"></div>
+    </section>
+
+    <section class="card">
+      <button class="danger" id="lock" type="button">🔒 נעל עכשיו</button>
+    </section>
+
+    <section class="card">
+      <h2>פתיחה מרחוק</h2>
+      <div class="chips" id="chips"></div>
+      <input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="9"
+             placeholder="קוד מהאפליקציה" aria-label="קוד מאפליקציית האימות">
+      <button id="unlock" type="button">🔓 פתח את המחשב</button>
+    </section>
+
+    <section class="card">
+      <h2>הודעה למסך</h2>
+      <textarea id="msg" maxlength="500" placeholder="למשל: הגיע הזמן לסגור את המחשב"></textarea>
+      <div class="count" id="msg-count">0/500</div>
+      <button id="send" type="button">✉ שלח למסך</button>
+    </section>
+
+    <p class="note">הקישור לדף הזה אישי. מי שיש לו אותו יכול לנעול ולשלוח הודעות, אבל פתיחה דורשת תמיד קוד מהאפליקציה.</p>
+  </div>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+(() => {
+  const NTFY = "https://ntfy.sh";
+  const DURATIONS = [[15, "רבע שעה"], [30, "חצי שעה"], [45, "45 דקות"], [60, "שעה"],
+                     [90, "שעה וחצי"], [120, "שעתיים"], [180, "3 שעות"], [0, "ללא הגבלה"]];
+  const REPLY_TIMEOUT = 15000;
+  const $ = (id) => document.getElementById(id);
+
+  // ---- הערוץ: מהקישור (#t=...) או מהפעם הקודמת. קישור חדש בלשונית פתוחה - טוענים מחדש
+  addEventListener("hashchange", () => location.reload());
+  const store = {
+    get() { try { return localStorage.getItem("otplock_topic"); } catch { return null; } },
+    set(v) { try { localStorage.setItem("otplock_topic", v); } catch {} },
+  };
+  const fromHash = new URLSearchParams(location.hash.slice(1)).get("t");
+  const topic = (fromHash && /^[\w-]{12,64}$/.test(fromHash)) ? fromHash : store.get();
+  if (!topic) { $("nolink").classList.remove("hidden"); return; }
+  store.set(topic);
+  if (!fromHash) history.replaceState(null, "", "#t=" + topic);
+  $("app").classList.remove("hidden");
+
+  // ---- הודעות קופצות
+  let toastTimer;
+  function toast(text, kind = "ok") {
+    const t = $("toast");
+    t.textContent = text;
+    t.className = "show " + kind;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (t.className = kind), 3500);
+  }
+
+  // ---- מצב המחשב
+  let state = null, stateAt = 0;
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  function ago(ms) {
+    const s = Math.round(ms / 1000);
+    if (s < 60) return "עכשיו";
+    if (s < 3600) return `לפני ${Math.round(s / 60)} דק׳`;
+    return `לפני ${Math.round(s / 3600)} שע׳`;
+  }
+  function render() {
+    const box = $("status");
+    if (!state) return;
+    const now = Date.now() / 1000;
+    let locked = state.locked;
+    if (!locked && state.until && state.until <= now) locked = true; // הזמן נגמר מאז העדכון
+    box.className = "card status " + (locked ? "locked" : "open");
+    $("st-icon").textContent = locked ? "🔒" : "🔓";
+    $("st-title").textContent = locked ? "המחשב נעול" : "המחשב פתוח";
+    $("st-sub").textContent = locked ? "" : (state.unlimited ? "ללא הגבלה" : fmt(state.until - now));
+    $("st-meta").textContent = `${state.host || ""} · עודכן ${ago(Date.now() - stateAt)}`;
+  }
+  setInterval(render, 1000);
+
+  // ---- האזנה לתשובות מהמחשב
+  const pending = new Map();
+  function onEvent(raw) {
+    let ev, data;
+    try { ev = JSON.parse(raw); data = JSON.parse(ev.message); } catch { return; }
+    if (ev.event !== "message" || !data || !data.state) return;
+    if (data.state.time * 1000 >= stateAt) { state = data.state; stateAt = data.state.time * 1000; render(); }
+    const p = data.id && pending.get(data.id);
+    if (p) {
+      pending.delete(data.id);
+      clearTimeout(p.timer);
+      p.resolve(data);
+    }
+  }
+  function listen() {
+    const es = new EventSource(`${NTFY}/${topic}_status/sse?since=12h`);
+    es.onmessage = (e) => onEvent(e.data);
+  }
+  listen();
+
+  // ---- שליחת פקודה
+  async function send(cmd) {
+    cmd.id = (crypto.randomUUID && crypto.randomUUID()) || String(Math.random()).slice(2);
+    const reply = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { pending.delete(cmd.id); reject(new Error("timeout")); }, REPLY_TIMEOUT);
+      pending.set(cmd.id, { resolve, timer });
+    });
+    const res = await fetch(`${NTFY}/${topic}`, { method: "POST", body: JSON.stringify(cmd) });
+    if (!res.ok) throw new Error("http " + res.status);
+    return reply;
+  }
+  async function run(button, cmd, okText) {
+    button.disabled = true;
+    try {
+      const r = await send(cmd);
+      if (r.ok) { if (okText) toast(okText, "ok"); return true; }
+      toast(r.error || "הפעולה נכשלה", "err");
+    } catch (e) {
+      toast(e.message === "timeout" ? "המחשב לא הגיב. אולי הוא כבוי או לא מחובר לאינטרנט"
+                                    : "אין חיבור לאינטרנט", "err");
+    } finally {
+      button.disabled = false;
+    }
+    return false;
+  }
+
+  // ---- כפתורים
+  let minutes = 60;
+  for (const [value, label] of DURATIONS) {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.textContent = label;
+    b.setAttribute("aria-pressed", String(value === minutes));
+    b.onclick = () => {
+      minutes = value;
+      document.querySelectorAll(".chip").forEach((c) => c.setAttribute("aria-pressed", String(c === b)));
+    };
+    $("chips").append(b);
+  }
+
+  $("lock").onclick = () => run($("lock"), { cmd: "lock" }, "המחשב ננעל");
+  $("unlock").onclick = async () => {
+    const code = $("code").value.replace(/[\s-]/g, "");
+    if (!/^(\d{6}|[A-Za-z0-9]{8})$/.test(code)) { toast("הזן קוד בן 6 ספרות", "err"); return; }
+    $("code").value = "";
+    await run($("unlock"), { cmd: "unlock", minutes, code }, "המחשב נפתח");
+  };
+  $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("unlock").click(); });
+  $("msg").addEventListener("input", () => ($("msg-count").textContent = `${$("msg").value.length}/500`));
+  $("send").onclick = async () => {
+    const text = $("msg").value.trim();
+    if (!text) { toast("כתוב הודעה", "err"); return; }
+    if (await run($("send"), { cmd: "message", text }, "ההודעה הוצגה במסך")) {
+      $("msg").value = ""; $("msg-count").textContent = "0/500";
+    }
+  };
+  $("refresh").onclick = () => run($("refresh"), { cmd: "status" }, "המצב עודכן");
+
+  run($("refresh"), { cmd: "status" });
+})();
+</script>
+</body>
+</html>
